@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from schema.user_input import UserInput
+from schema.prediction_response import PredictionResponse
 from model.predict import predict_output, model, MODEL_VERSION
 
 app = FastAPI()
@@ -17,7 +18,8 @@ def health_check():
     return {"status": "ok", "version": MODEL_VERSION, "model_loaded": model is not None}
 
 
-@app.post("/predict")
+# we can also pass a response model to validate the output with that model
+@app.post("/predict", response_model=PredictionResponse)
 def predict_premium(data: UserInput):
     user_input = {
         "bmi": data.bmi,
@@ -28,6 +30,8 @@ def predict_premium(data: UserInput):
         "occupation": data.occupation,
     }
 
-    prediction = predict_output(user_input)
-
-    return JSONResponse(status_code=200, content={"predicted_category": prediction})
+    try:
+        prediction = predict_output(user_input)
+        return JSONResponse(status_code=200, content={"predicted_category": prediction})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
