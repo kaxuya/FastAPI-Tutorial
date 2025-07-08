@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Path, Query, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, computed_field
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Optional
 import json
 
 app = FastAPI()
@@ -38,7 +38,7 @@ class Patient(BaseModel):
     def bmi(self) -> float:
         bmi = round(self.weight / (self.height * self.height), 2)
         return bmi
-    
+
     @computed_field
     @property
     def verdict(self) -> str:
@@ -52,11 +52,50 @@ class Patient(BaseModel):
             return "Obese"
 
 
+class PatientUpdate(BaseModel):
+    name: Annotated[
+        Optional[str],
+        Field(
+            default=None, description="Name of the patient", examples=["Ananya Verma"]
+        ),
+    ]
+    city: Annotated[
+        Optional[str],
+        Field(default=None, description="City of the patient", examples=["Guwahati"]),
+    ]
+    age: Annotated[
+        Optional[int],
+        Field(
+            default=None, gt=0, lt=120, description="Age of the patient", examples=[28]
+        ),
+    ]
+    gender: Annotated[
+        Optional[Literal["male", "female", "others"]],
+        Field(default=None, description="Gender of the patient", examples=["female"]),
+    ]
+    height: Annotated[
+        Optional[float],
+        Field(
+            default=None,
+            gt=0,
+            description="Height of the patient in meters",
+            examples=[1.75],
+        ),
+    ]
+    weight: Annotated[
+        Optional[float],
+        Field(
+            default=None, gt=0, description="Weight of the patient in kg", examples=[85]
+        ),
+    ]
+
+
 def load_data():
     with open("patients.json") as f:
         data = json.load(f)
 
     return data
+
 
 def save_data(data):
     with open("patients.json", "w") as f:
@@ -114,7 +153,9 @@ def sort_patients(
 
     return sorted_data
 
-@app.post('/create') # this post request will get automatically the json data recieved in the request body
+
+# this post request will get automatically the json data recieved in the request body
+@app.post("/create")
 def create_patient(patient: Patient):
     # load existing data
     data = load_data()
@@ -122,9 +163,55 @@ def create_patient(patient: Patient):
     # check if patient already exists
     if patient.id in data:
         raise HTTPException(status_code=400, detail="Patient already exists")
-    
+
     # add the patient to the database
-    data[patient.id] = patient.model_dump(exclude={'id'})
+    data[patient.id] = patient.model_dump(exclude={"id"})
     save_data(data)
 
-    return JSONResponse(status_code=201, content={"message": "Patient created successfully"})
+    return JSONResponse(
+        status_code=201, content={"message": "Patient created successfully"}
+    )
+
+
+@app.put("/edit/{patient_id}")
+def update_patient(patient_id: str, patient_update: PatientUpdate):
+    data = load_data()
+
+    if patient_id not in data:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    existing_patient_info = data[patient_id]
+    update_patient_info = patient_update.model_dump(exclude_unset=True)
+    # this exclude_unset=True excludes the fields that are not provided in the request body
+    # otherwise it would have shown the default values (None in our case) of the fields in the response body
+
+    for key, value in update_patient_info.items():
+        existing_patient_info[key] = value
+
+    existing_patient_info["id"] = patient_id
+    patient_pydantic_obj = Patient(**existing_patient_info)
+
+    existing_patient_info = patient_pydantic_obj.model_dump(exclude={"id"})
+
+    data[patient_id] = existing_patient_info
+    save_data(data)
+
+    return JSONResponse(
+        status_code=200, content={"message": "Patient updated successfully"}
+    )
+
+
+@app.delete("/delete/{patient_id}")
+def delete_patient(patient_id: str):
+
+    data = load_data()
+
+    if patient_id not in data:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    del data[patient_id]
+    save_data(data)
+
+    return JSONResponse(
+        status_code=200, content={"message": "Patient deleted successfully"}
+    )
